@@ -19,6 +19,7 @@ import io
 import csv
 import json
 import uuid
+import os
 import hashlib
 from datetime import date, datetime
 from pathlib import Path
@@ -44,9 +45,18 @@ app = FastAPI(
     description="Unified institutional record system for 6 campuses & 14,000 canonical students with PostgreSQL Row-Level Security."
 )
 
+frontend_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv(
+        "TRUSTOS_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
