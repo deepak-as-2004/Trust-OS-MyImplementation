@@ -27,6 +27,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.db import get_owner_conn, get_rls_conn
@@ -49,7 +50,7 @@ frontend_origins = [
     origin.strip().rstrip("/")
     for origin in os.getenv(
         "TRUSTOS_CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173",
+        "https://trust-os-myimplementation.onrender.com,http://localhost:5173,http://127.0.0.1:5173",
     ).split(",")
     if origin.strip()
 ]
@@ -2516,3 +2517,36 @@ def list_audit_logs(
             else:
                 cur.execute("SELECT * FROM audit_logs WHERE campus_id = %s ORDER BY created_at DESC LIMIT %s", (user["primary_campus_id"], limit))
             return {"audit_logs": cur.fetchall()}
+
+# Serve the built React frontend in production.
+# The frontend is built into frontend/dist at the repository root.
+
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+if FRONTEND_DIST.exists():
+    assets_dir = FRONTEND_DIST / "assets"
+
+    if assets_dir.exists():
+        app.mount(
+            "/assets",
+            StaticFiles(directory=str(assets_dir)),
+            name="frontend-assets",
+        )
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_frontend(full_path: str):
+        # API routes must not silently return the frontend HTML.
+        from fastapi.responses import FileResponse
+        from fastapi import HTTPException
+
+        if full_path == "api" or full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="API endpoint not found")
+
+        requested_file = (FRONTEND_DIST / full_path).resolve()
+
+        # Only serve files located inside the frontend build directory.
+        if requested_file.is_relative_to(FRONTEND_DIST.resolve()) and requested_file.is_file():
+            return FileResponse(str(requested_file))
+
+        # Support React client-side navigation.
+        return FileResponse(str(FRONTEND_DIST / "index.html"))
